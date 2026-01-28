@@ -30,7 +30,11 @@ builder.Services.AddHttpClient("gateway")
     {
         AutomaticDecompression = DecompressionMethods.All,
         PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2)
+        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
+        SslOptions = new System.Net.Security.SslClientAuthenticationOptions
+        {
+            RemoteCertificateValidationCallback = (_, _, _, _) => true
+        }
     });
 
 builder.Services.Configure<GatewayOptions>(builder.Configuration.GetSection("Gateway"));
@@ -56,6 +60,56 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["Gateway:ConnectionString"]
 }
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
+
+app.MapGet("/api/contracts/auth", async (HttpContext context) =>
+{
+    var options = context.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<GatewayOptions>>().Value;
+    if (string.IsNullOrWhiteSpace(options.AuthSwaggerUrl))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        await context.Response.WriteAsync("auth swagger not configured");
+        return;
+    }
+
+    var http = context.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient("gateway");
+    using var response = await http.GetAsync(options.AuthSwaggerUrl, context.RequestAborted);
+    context.Response.StatusCode = (int)response.StatusCode;
+    foreach (var header in response.Headers)
+    {
+        context.Response.Headers[header.Key] = header.Value.ToArray();
+    }
+    foreach (var header in response.Content.Headers)
+    {
+        context.Response.Headers[header.Key] = header.Value.ToArray();
+    }
+    context.Response.Headers.Remove("transfer-encoding");
+    await response.Content.CopyToAsync(context.Response.Body);
+});
+
+app.MapGet("/api/contracts/safe", async (HttpContext context) =>
+{
+    var options = context.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<GatewayOptions>>().Value;
+    if (string.IsNullOrWhiteSpace(options.SafeSwaggerUrl))
+    {
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        await context.Response.WriteAsync("safe swagger not configured");
+        return;
+    }
+
+    var http = context.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient("gateway");
+    using var response = await http.GetAsync(options.SafeSwaggerUrl, context.RequestAborted);
+    context.Response.StatusCode = (int)response.StatusCode;
+    foreach (var header in response.Headers)
+    {
+        context.Response.Headers[header.Key] = header.Value.ToArray();
+    }
+    foreach (var header in response.Content.Headers)
+    {
+        context.Response.Headers[header.Key] = header.Value.ToArray();
+    }
+    context.Response.Headers.Remove("transfer-encoding");
+    await response.Content.CopyToAsync(context.Response.Body);
+});
 
 app.MapGet("/api/gateway/endpoints", async (HttpContext context) =>
 {

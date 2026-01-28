@@ -12,6 +12,8 @@ public sealed class GatewayOptions
     public string ConnectionString { get; set; } = string.Empty;
     public List<string> AllowedOrigins { get; set; } = new();
     public List<RouteRule> Routes { get; set; } = new();
+    public string AuthSwaggerUrl { get; set; } = string.Empty;
+    public string SafeSwaggerUrl { get; set; } = string.Empty;
 }
 
 public sealed class RouteRule
