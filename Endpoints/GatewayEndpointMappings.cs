@@ -406,7 +406,10 @@ public static class GatewayEndpointMappings
                 ? options.GatewaySyncToken
                 : null;
             var userId = introspection.Sub;
-            var userName = JwtClaimsExtractor.ExtractUserNameFromToken(token);
+            var userName = introspection.PreferredUsername
+                ?? introspection.Name
+                ?? introspection.Email
+                ?? JwtClaimsExtractor.ExtractUserNameFromToken(token);
             await ProxyHelpers.ProxyAsync(context, httpClientFactory, route.Upstream, gatewayToken, userId, userName);
         });
     }

@@ -43,4 +43,8 @@ public sealed class IntrospectionResponse
     public string? Scope { get; set; }
     public string[]? Roles { get; set; }
     public string? Sid { get; set; }
+    public string? Name { get; set; }
+    [System.Text.Json.Serialization.JsonPropertyName("preferred_username")]
+    public string? PreferredUsername { get; set; }
+    public string? Email { get; set; }
 }
