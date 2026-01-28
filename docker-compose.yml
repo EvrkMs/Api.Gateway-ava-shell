@@ -1,0 +1,23 @@
+services:
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: Api.Gateway/Dockerfile
+    container_name: api.gateway
+    env_file:
+      - .env
+    restart: unless-stopped
+    expose:
+      - "8080"
+    networks:
+      - nginx_network
+      - api_gateway
+
+networks:
+  nginx_network:
+    external: true
+    name: nginx_network
+
+  api_gateway:
+    driver: bridge
+    name: api_gateway
