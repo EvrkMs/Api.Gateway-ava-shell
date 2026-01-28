@@ -9,6 +9,7 @@ using Api.Gateway.Services;
 using Api.Gateway.Stores;
 using Api.Gateway.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 var JsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -25,6 +26,25 @@ var HopByHopHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
 };
 
 builder.Services.AddMemoryCache();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("gateway-admin", new OpenApiInfo
+    {
+        Title = "Gateway Admin API",
+        Version = "v1"
+    });
+    options.DocInclusionPredicate((docName, apiDesc) =>
+    {
+        if (!string.Equals(docName, "gateway-admin", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var path = apiDesc.RelativePath ?? string.Empty;
+        return path.StartsWith("api/gateway", StringComparison.OrdinalIgnoreCase);
+    });
+});
 builder.Services.AddHttpClient("gateway")
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
     {
@@ -60,6 +80,25 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["Gateway:ConnectionString"]
 }
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api/gateway/swagger", StringComparison.OrdinalIgnoreCase))
+    {
+        var options = context.RequestServices
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<GatewayOptions>>()
+            .Value;
+
+        if (!await EnsureRootAsync(context, options))
+        {
+            return;
+        }
+    }
+
+    await next();
+});
+
+app.MapSwagger("api/gateway/swagger/{documentName}/swagger.json");
 
 app.MapGet("/api/contracts/auth", async (HttpContext context) =>
 {
@@ -134,7 +173,7 @@ app.MapGet("/api/gateway/endpoints", async (HttpContext context) =>
         .OrderBy(e => e.NormalizedName)
         .ToListAsync(context.RequestAborted);
     await context.Response.WriteAsJsonAsync(endpoints, JsonOptions, context.RequestAborted);
-});
+}).WithTags("Gateway Admin");
 
 app.MapGet("/api/gateway/permissions", async (HttpContext context) =>
 {
@@ -171,7 +210,7 @@ app.MapGet("/api/gateway/permissions", async (HttpContext context) =>
         .ThenBy(p => p.EndpointId);
 
     await context.Response.WriteAsJsonAsync(response, JsonOptions, context.RequestAborted);
-});
+}).WithTags("Gateway Admin");
 
 app.MapPut("/api/gateway/permissions", async (HttpContext context) =>
 {
@@ -232,7 +271,7 @@ app.MapPut("/api/gateway/permissions", async (HttpContext context) =>
     permissionStore.Update(updated);
 
     context.Response.StatusCode = StatusCodes.Status204NoContent;
-});
+}).WithTags("Gateway Admin");
 
 app.MapDelete("/api/gateway/permissions/{role}/{endpointId:guid}", async (HttpContext context, string role, Guid endpointId) =>
 {
@@ -263,7 +302,7 @@ app.MapDelete("/api/gateway/permissions/{role}/{endpointId:guid}", async (HttpCo
     var updated = await db.RolePermissions.AsNoTracking().ToListAsync(context.RequestAborted);
     permissionStore.Update(updated);
     context.Response.StatusCode = StatusCodes.Status204NoContent;
-});
+}).WithTags("Gateway Admin");
 
 app.MapGet("/api/gateway/role-scopes", async (HttpContext context) =>
 {
@@ -276,7 +315,90 @@ app.MapGet("/api/gateway/role-scopes", async (HttpContext context) =>
 
     var snapshot = roleScopeStore.Snapshot();
     await context.Response.WriteAsJsonAsync(snapshot, JsonOptions, context.RequestAborted);
-});
+}).WithTags("Gateway Admin");
+
+app.MapPut("/api/gateway/role-scopes", async (HttpContext context) =>
+{
+    var options = context.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<GatewayOptions>>().Value;
+    var roleScopeStore = context.RequestServices.GetRequiredService<RoleScopeStore>();
+    if (!await EnsureRootAsync(context, options))
+    {
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(options.RoleScopesSyncUrl) || string.IsNullOrWhiteSpace(options.GatewaySyncToken))
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await context.Response.WriteAsync("role scopes sync not configured");
+        return;
+    }
+
+    var payload = await context.Request.ReadFromJsonAsync<List<RoleScopeDto>>(JsonOptions, context.RequestAborted);
+    if (payload is null || payload.Count == 0)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await context.Response.WriteAsync("empty payload");
+        return;
+    }
+
+    var http = context.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient("gateway");
+    using var request = new HttpRequestMessage(HttpMethod.Put, options.RoleScopesSyncUrl);
+    request.Headers.TryAddWithoutValidation("X-Gateway-Token", options.GatewaySyncToken);
+    request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+
+    using var response = await http.SendAsync(request, context.RequestAborted);
+    if (!response.IsSuccessStatusCode)
+    {
+        context.Response.StatusCode = (int)response.StatusCode;
+        await response.Content.CopyToAsync(context.Response.Body);
+        return;
+    }
+
+    var updated = await FetchRoleScopesAsync(http, options, context.RequestAborted);
+    if (updated is not null)
+    {
+        roleScopeStore.Update(updated);
+    }
+
+    context.Response.StatusCode = StatusCodes.Status204NoContent;
+}).WithTags("Gateway Admin");
+
+app.MapDelete("/api/gateway/role-scopes/{role}/{scope}", async (HttpContext context, string role, string scope) =>
+{
+    var options = context.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<GatewayOptions>>().Value;
+    var roleScopeStore = context.RequestServices.GetRequiredService<RoleScopeStore>();
+    if (!await EnsureRootAsync(context, options))
+    {
+        return;
+    }
+
+    if (string.IsNullOrWhiteSpace(options.RoleScopesSyncUrl) || string.IsNullOrWhiteSpace(options.GatewaySyncToken))
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await context.Response.WriteAsync("role scopes sync not configured");
+        return;
+    }
+
+    var http = context.RequestServices.GetRequiredService<IHttpClientFactory>().CreateClient("gateway");
+    using var request = new HttpRequestMessage(HttpMethod.Delete, $"{options.RoleScopesSyncUrl.TrimEnd('/')}/{Uri.EscapeDataString(role)}/{Uri.EscapeDataString(scope)}");
+    request.Headers.TryAddWithoutValidation("X-Gateway-Token", options.GatewaySyncToken);
+
+    using var response = await http.SendAsync(request, context.RequestAborted);
+    if (!response.IsSuccessStatusCode)
+    {
+        context.Response.StatusCode = (int)response.StatusCode;
+        await response.Content.CopyToAsync(context.Response.Body);
+        return;
+    }
+
+    var updated = await FetchRoleScopesAsync(http, options, context.RequestAborted);
+    if (updated is not null)
+    {
+        roleScopeStore.Update(updated);
+    }
+
+    context.Response.StatusCode = StatusCodes.Status204NoContent;
+}).WithTags("Gateway Admin");
 
 app.Map("/{**catchall}", async context =>
 {
@@ -476,6 +598,29 @@ async Task<IntrospectionResponse?> IntrospectAsync(
 
     var stream = await response.Content.ReadAsStreamAsync(ct);
     return await JsonSerializer.DeserializeAsync<IntrospectionResponse>(stream, JsonOptions, ct);
+}
+
+async Task<List<RoleScopeDto>?> FetchRoleScopesAsync(
+    HttpClient http,
+    GatewayOptions options,
+    CancellationToken ct)
+{
+    if (string.IsNullOrWhiteSpace(options.RoleScopesSyncUrl) || string.IsNullOrWhiteSpace(options.GatewaySyncToken))
+    {
+        return null;
+    }
+
+    using var request = new HttpRequestMessage(HttpMethod.Get, options.RoleScopesSyncUrl);
+    request.Headers.TryAddWithoutValidation("X-Gateway-Token", options.GatewaySyncToken);
+
+    using var response = await http.SendAsync(request, ct);
+    if (!response.IsSuccessStatusCode)
+    {
+        return null;
+    }
+
+    var stream = await response.Content.ReadAsStreamAsync(ct);
+    return await JsonSerializer.DeserializeAsync<List<RoleScopeDto>>(stream, JsonOptions, ct);
 }
 
 async Task ProxyAsync(HttpContext context, IHttpClientFactory httpClientFactory, string upstream, string? gatewayToken)
