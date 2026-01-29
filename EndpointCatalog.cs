@@ -25,18 +25,18 @@ public static class EndpointCatalog
         Make("PUT", "/api/cruduser/roles/{id}", "auth", "Обновить роль", "Обновление роли"),
         Make("DELETE", "/api/cruduser/roles/{id}", "auth", "Удалить роль", "Удаление роли"),
 
-        Make("GET", "/api/sessions", "auth", "Список сессий", "Получить список активных сессий пользователя"),
-        Make("GET", "/api/sessions/current", "auth", "Текущая сессия", "Получить текущую сессию"),
-        Make("POST", "/api/sessions/{id}/revoke", "auth", "Отозвать сессию", "Отозвать сессию по ID"),
-        Make("POST", "/api/sessions/revoke-all", "auth", "Отозвать все сессии", "Отозвать все сессии кроме текущей"),
+        Make("GET", "/api/sessions", "account", "Список сессий", "Получить список активных сессий пользователя"),
+        Make("GET", "/api/sessions/current", "account", "Текущая сессия", "Получить текущую сессию"),
+        Make("POST", "/api/sessions/{id}/revoke", "account", "Отозвать сессию", "Отозвать сессию по ID"),
+        Make("POST", "/api/sessions/revoke-all", "account", "Отозвать все сессии", "Отозвать все сессии кроме текущей"),
 
         Make("GET", "/api/role-scopes", "auth", "Список ролей/скоупов", "Получить назначенные роли/скоупы"),
         Make("PUT", "/api/role-scopes", "auth", "Обновить роли/скоупы", "Обновить назначения ролей и скоупов"),
         Make("DELETE", "/api/role-scopes/{role}/{scope}", "auth", "Удалить роль/скоуп", "Удалить назначение роли и скоупа"),
 
-        Make("GET", "/api/telegram/me", "auth", "Telegram профиль", "Получить Telegram профиль"),
-        Make("POST", "/api/telegram/bind", "auth", "Привязать Telegram", "Привязка Telegram"),
-        Make("POST", "/api/telegram/unbind", "auth", "Отвязать Telegram", "Отвязка Telegram")
+        Make("GET", "/api/telegram/me", "account", "Telegram профиль", "Получить Telegram профиль"),
+        Make("POST", "/api/telegram/bind", "account", "Привязать Telegram", "Привязка Telegram"),
+        Make("POST", "/api/telegram/unbind", "account", "Отвязать Telegram", "Отвязка Telegram")
     };
 
     private static GatewayEndpoint Make(string method, string path, string scope, string displayName, string? description)

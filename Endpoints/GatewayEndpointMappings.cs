@@ -334,7 +334,6 @@ public static class GatewayEndpointMappings
             var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
             var httpClientFactory = context.RequestServices.GetRequiredService<IHttpClientFactory>();
 
-            CorsHelpers.ApplyCors(context, options.AllowedOrigins);
             if (HttpMethods.IsOptions(context.Request.Method))
             {
                 context.Response.StatusCode = StatusCodes.Status204NoContent;
@@ -388,14 +387,15 @@ public static class GatewayEndpointMappings
 
             var roles = introspection.Roles ?? Array.Empty<string>();
             var isRoot = roles.Any(r => string.Equals(r, "root", StringComparison.OrdinalIgnoreCase));
-            if (!isRoot && !roleScopeStore.HasScope(roles, endpoint.Scope))
+            var isAccountScope = string.Equals(endpoint.Scope, "account", StringComparison.OrdinalIgnoreCase);
+            if (!isRoot && !isAccountScope && !roleScopeStore.HasScope(roles, endpoint.Scope))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsync("forbidden");
                 return;
             }
 
-            if (!isRoot && !permissionStore.IsAllowed(roles, endpoint.Id))
+            if (!isRoot && !isAccountScope && !permissionStore.IsAllowed(roles, endpoint.Id))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsync("forbidden");

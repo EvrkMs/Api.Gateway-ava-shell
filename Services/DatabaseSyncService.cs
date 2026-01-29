@@ -38,17 +38,42 @@ public sealed class DatabaseSyncService : BackgroundService
             await db.Database.MigrateAsync(stoppingToken);
 
             var existing = await db.GatewayEndpoints
-                .Select(e => e.NormalizedName)
                 .ToListAsync(stoppingToken);
-            var existingSet = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+            var existingMap = existing
+                .ToDictionary(e => e.NormalizedName, StringComparer.OrdinalIgnoreCase);
+            var now = DateTimeOffset.UtcNow;
+
             var toAdd = EndpointCatalog.All
-                .Where(e => !existingSet.Contains(e.NormalizedName))
+                .Where(e => !existingMap.ContainsKey(e.NormalizedName))
                 .ToList();
             if (toAdd.Count > 0)
             {
                 await db.GatewayEndpoints.AddRangeAsync(toAdd, stoppingToken);
-                await db.SaveChangesAsync(stoppingToken);
             }
+
+            foreach (var endpoint in EndpointCatalog.All)
+            {
+                if (!existingMap.TryGetValue(endpoint.NormalizedName, out var current))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(current.Path, endpoint.Path, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(current.Scope, endpoint.Scope, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(current.DisplayName, endpoint.DisplayName, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(current.Description, endpoint.Description, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(current.Method, endpoint.Method, StringComparison.OrdinalIgnoreCase))
+                {
+                    current.Path = endpoint.Path;
+                    current.Scope = endpoint.Scope;
+                    current.DisplayName = endpoint.DisplayName;
+                    current.Description = endpoint.Description;
+                    current.Method = endpoint.Method;
+                    current.UpdatedAt = now;
+                }
+            }
+
+            await db.SaveChangesAsync(stoppingToken);
         }
 
         while (!stoppingToken.IsCancellationRequested)

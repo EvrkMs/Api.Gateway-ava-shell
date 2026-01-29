@@ -1,7 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Api.Gateway.Http;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Api.Gateway.Security;
@@ -16,7 +15,6 @@ public static class GatewayAuthHelpers
         var cache = context.RequestServices.GetRequiredService<IMemoryCache>();
         var httpClientFactory = context.RequestServices.GetRequiredService<IHttpClientFactory>();
 
-        CorsHelpers.ApplyCors(context, options.AllowedOrigins);
         if (HttpMethods.IsOptions(context.Request.Method))
         {
             context.Response.StatusCode = StatusCodes.Status204NoContent;
